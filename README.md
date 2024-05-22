@@ -1,5 +1,5 @@
 # file_bundler
-Simple file bundler for C++ 17 (and up)
+Simple header only file bundler for C++ 17 (and up)
 
 ### Bundling examples
 ```c++
