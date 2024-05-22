@@ -66,7 +66,7 @@ class Base_Stream
 
   /* 1. File object */
   std::fstream file;
-  std::string file_name;
+  std::string file_path;
 
   /* 2. Vector */
   std::vector<std::uint8_t>* vector = nullptr;
@@ -77,9 +77,9 @@ class Base_Stream
 
   public:
   /* Returns empty string if not file stream object */
-  std::string get_file_name()
+  std::string get_file_path()
   {
-    return this->file_name;
+    return this->file_path;
   }
 
   void open(std::uint8_t* p_address, std::uint64_t p_size)
@@ -100,10 +100,10 @@ class Base_Stream
     this->stream_object_type = STREAM_OBJECT_TYPE::VECTOR;
   }
 
-  void open(const std::string& p_file_name, std::ios_base::openmode p_openmode)
+  void open(const std::string& p_file_path, std::ios_base::openmode p_openmode)
   {
-    this->file.open(p_file_name, p_openmode);
-    this->file_name = p_file_name;
+    this->file.open(p_file_path, p_openmode);
+    this->file_path = p_file_path;
     this->stream_object_type = STREAM_OBJECT_TYPE::FILE;
   }
 
@@ -117,9 +117,9 @@ class Base_Stream
     open(p_vector, p_size);
   }
 
-  Base_Stream(const std::string& p_file_name, std::ios_base::openmode p_openmode)
+  Base_Stream(const std::string& p_file_path, std::ios_base::openmode p_openmode)
   {
-    open(p_file_name, p_openmode);
+    open(p_file_path, p_openmode);
   }
 
   Base_Stream() {}
@@ -205,13 +205,13 @@ class Output_Stream : public Base_Stream
   using Base_Stream::Base_Stream;
 };
 
-/* We use this metadata to parse and debundle our bundled files.
+/* We use this header to parse and debundle our bundled files.
  * This way there is no need to use magic numbers to separate each section.
  * Adding offsets would make parsing easier but the trade off is a slight increase in size of the final bundle.
  */
-struct Header_Metadata
+struct Header
 {
-  std::uint64_t names_section_size = 0;
+  std::uint64_t paths_section_size = 0;
   std::uint64_t sizes_section_size = 0;
   std::uint64_t files_section_size = 0;
 };
@@ -221,7 +221,7 @@ struct Header_Metadata
 class File
 {
   private:
-  std::string name;
+  std::string path;
   std::uint64_t size = 0;
   std::vector<std::uint8_t> bytes;
 
@@ -236,14 +236,14 @@ class File
     this->size = p_file_size;
   }
 
-  std::string& get_name()
+  std::string& get_path()
   {
-    return this->name;
+    return this->path;
   }
 
-  void set_name(const std::string& p_file_name)
+  void set_path(const std::string& p_file_path)
   {
-    this->name = p_file_name;
+    this->path = p_file_path;
   }
 
   std::vector<std::uint8_t>& get_bytes()
@@ -257,9 +257,9 @@ class File
   }
 
   /* Helper (overload) for easier transfer of bytes from memory block to member vector.
-  * Just use this instead of bothering with memcpy and std::vector's methods.
-  * NOTE: Only deallocate if memory block is on the heap.
-  */
+   * Just use this instead of bothering with memcpy and std::vector's methods.
+   * NOTE: Only deallocate if memory block is on the heap.
+   */
   void set_bytes(std::uint8_t* p_address, std::uint64_t p_size, bool p_deallocate = false)
   {
     this->size = p_size;
@@ -272,22 +272,22 @@ class File
     }
   }
 
-  File(const std::string& p_file_name, std::uint8_t* p_address, std::uint64_t p_size, bool p_deallocate = false)
+  File(const std::string& p_file_path, std::uint8_t* p_address, std::uint64_t p_size, bool p_deallocate = false)
   {
-    this->name = p_file_name;
+    this->path = p_file_path;
     this->set_bytes(p_address, p_size, p_deallocate);
   }
 
-  File(std::string p_file_name, std::vector<std::uint8_t> p_bytes)
+  File(std::string p_file_path, std::vector<std::uint8_t> p_bytes)
   {
-    this->name = p_file_name;
+    this->path = p_file_path;
     this->size = p_bytes.size();
     this->bytes = p_bytes;
   }
 
-  File(std::string p_file_name, std::uint64_t p_size)
+  File(std::string p_file_path, std::uint64_t p_size)
   {
-    this->name = p_file_name;
+    this->path = p_file_path;
     this->size = p_size;
   }
 
@@ -297,22 +297,22 @@ class File
 /* Main bundler function. */
 File bundle(_::Output_Stream& p_output_stream, const std::vector<File>& p_files, bool p_from_memory)
 {
-  _::Header_Metadata metadata;
+  _::Header header;
 
   for (auto file : p_files)
   {
-    metadata.names_section_size += file.get_name().size() + 1; /* +1 for null-terminator */
-    metadata.sizes_section_size += sizeof(std::uint64_t);
-    metadata.files_section_size += file.get_size();
+    header.paths_section_size += file.get_path().size() + 1; /* +1 for null-terminator */
+    header.sizes_section_size += sizeof(std::uint64_t);
+    header.files_section_size += file.get_size();
   }
 
-  /* Write metadata to bundle before anything else */
-  p_output_stream.write(reinterpret_cast<std::uint8_t*>(&metadata), sizeof(_::Header_Metadata));
+  /* Write header to bundle before anything else */
+  p_output_stream.write(reinterpret_cast<std::uint8_t*>(&header), sizeof(_::Header));
 
   for (auto file : p_files)
   {
-    std::uint64_t file_name_size = file.get_name().size() + 1; /* +1 for null-terminator */
-    p_output_stream.write(reinterpret_cast<std::uint8_t*>(const_cast<char*>(file.get_name().c_str())), file_name_size);
+    std::uint64_t file_name_size = file.get_path().size() + 1; /* +1 for null-terminator */
+    p_output_stream.write(reinterpret_cast<std::uint8_t*>(const_cast<char*>(file.get_path().c_str())), file_name_size);
   }
 
   for (auto file : p_files)
@@ -329,7 +329,7 @@ File bundle(_::Output_Stream& p_output_stream, const std::vector<File>& p_files,
     }
     else
     {
-      _::Input_Stream input_stream(file.get_name(), std::ios::in | std::ios::binary);
+      _::Input_Stream input_stream(file.get_path(), std::ios::in | std::ios::binary);
 
       /* Could be more efficient but whatever... works fine with small to medium sized files. */
       for (int offset = 0; offset < file.get_size(); offset++)
@@ -341,7 +341,7 @@ File bundle(_::Output_Stream& p_output_stream, const std::vector<File>& p_files,
     }
   }
 
-  return {p_output_stream.get_file_name(), p_output_stream.get_total_bytes_written()};
+  return {p_output_stream.get_file_path(), p_output_stream.get_total_bytes_written()};
 }
 
 /* Bundle files from memory to disk. */
@@ -352,14 +352,14 @@ File bundle(const std::string& p_bundle_output_path, const std::vector<File>& p_
 }
 
 /* Bundle files from disk to disk. */
-File bundle(const std::string& p_bundle_output_path, const std::vector<std::string>& p_file_names)
+File bundle(const std::string& p_bundle_output_path, const std::vector<std::string>& p_file_paths)
 {
   _::Output_Stream output_stream(p_bundle_output_path, std::ios::out | std::ios::binary | std::ios::app);
   std::vector<File> files;
 
-  for (const auto& file_name : p_file_names)
+  for (const auto& file_path : p_file_paths)
   {
-    files.push_back({file_name, fs::file_size(file_name)});
+    files.push_back({file_path, fs::file_size(file_path)});
   }
 
   return bundle(output_stream, files, false);
@@ -377,15 +377,15 @@ File bundle(const std::vector<File>& p_files)
 }
 
 /* Bundle files from disk to memory. */
-File bundle(const std::vector<std::string>& p_file_names)
+File bundle(const std::vector<std::string>& p_file_paths)
 {
   std::vector<std::uint8_t> buffer;
   _::Output_Stream output_stream(&buffer, buffer.size());
   std::vector<File> files;
 
-  for (const auto& file_name : p_file_names)
+  for (const auto& file_path : p_file_paths)
   {
-    files.push_back({file_name, fs::file_size(file_name)});
+    files.push_back({file_path, fs::file_size(file_path)});
   }
 
   auto package = bundle(output_stream, files, false);
@@ -398,21 +398,21 @@ std::vector<File> debundle(_::Input_Stream& p_input_stream, const std::string& p
 {
   std::vector<File> debundled_files;
 
-  _::Header_Metadata metadata;
-  auto metadata_size = sizeof(_::Header_Metadata);
+  _::Header header;
+  auto metadata_size = sizeof(_::Header);
 
-  /* Read bundle header metadata first for info necessary for parsing */
-  p_input_stream.read(reinterpret_cast<std::uint8_t*>(&metadata), metadata_size);
+  /* Read bundle header header first for info necessary for parsing */
+  p_input_stream.read(reinterpret_cast<std::uint8_t*>(&header), metadata_size);
 
   /* Starting offset in bytes of each section from the beginning of the file. */
-  std::uint64_t names_section_offset = metadata_size;
-  std::uint64_t sizes_section_offset = names_section_offset + metadata.names_section_size;
-  std::uint64_t files_section_offset = sizes_section_offset + metadata.names_section_size + metadata.sizes_section_size;
+  std::uint64_t paths_section_offset = metadata_size;
+  std::uint64_t sizes_section_offset = paths_section_offset + header.paths_section_size;
+  std::uint64_t files_section_offset = sizes_section_offset + header.paths_section_size + header.sizes_section_size;
 
-  std::uint64_t number_of_bundled_files = metadata.sizes_section_size / sizeof(std::uint64_t);
+  std::uint64_t number_of_bundled_files = header.sizes_section_size / sizeof(std::uint64_t);
 
-  /* These will be filled with the names sizes of each bundled file. */
-  std::vector<std::string> names_of_bundled_files;
+  /* These will be filled with the paths and sizes of each bundled file. */
+  std::vector<std::string> paths_of_bundled_files;
   std::vector<std::uint64_t> sizes_of_bundled_files;
 
   /* Reserve space for the array for efficiency (probably senseless),
@@ -420,21 +420,21 @@ std::vector<File> debundle(_::Input_Stream& p_input_stream, const std::string& p
    */
   sizes_of_bundled_files.reserve(number_of_bundled_files);
 
-  p_input_stream.seekg(names_section_offset);
+  p_input_stream.seekg(paths_section_offset);
 
   /* Grab the file names from the header. */
   for (int i = 0; i < number_of_bundled_files; i++)
   {
-    std::string file_name;
+    std::string file_path;
     char current_char = CHAR_MAX;
 
     while (current_char != '\0')
     {
       p_input_stream.read(reinterpret_cast<std::uint8_t*>(&current_char), sizeof(std::uint8_t));
-      file_name += current_char;
+      file_path += current_char;
     }
 
-    names_of_bundled_files.push_back(file_name);
+    paths_of_bundled_files.push_back(file_path);
   }
 
   //bundle_file.seekg(sizes_section_offset);
@@ -449,31 +449,40 @@ std::vector<File> debundle(_::Input_Stream& p_input_stream, const std::string& p
   }
 
   /* Now that we have the file names and sizes, we can prepare for extraction.
-   * First check if file is supposed to be in a directory tree.
+   * First create output directories if necessary.
    */
-  for (auto name : names_of_bundled_files)
+  for (auto& file_path : paths_of_bundled_files)
   {
-    if (!p_to_memory)
+    /* Break instead of indenting with another outer if clause LOL. */
+    if (p_to_memory)
     {
       break;
     }
 
-    std::string original_path;
+    std::string original_tree;
 
-    for (int i = name.size() - 1; i > 0; i--)
+    for (int i = file_path.size() - 1; i > 0; i--)
     {
-      if (name[i] == '/' || name[i] == '\\')
+      if (file_path[i] == '/' || file_path[i] == '\\')
       {
-        original_path = name.substr(0, i);
+        original_tree = file_path.substr(0, i);
         break;
       }
     }
 
     /* Create directory tree. */
-    if (!original_path.empty())
+    if (!original_tree.empty())
     {
-      std::string output_path = p_output_directory + '/' + original_path;
-      fs::create_directories(output_path);
+      std::string output_tree = original_tree;
+
+      if (!p_output_directory.empty())
+      {
+        /* Prepend */
+        output_tree = p_output_directory + '/' + std::move(output_tree);
+        file_path = p_output_directory + '/' + std::move(file_path);
+      }
+
+      fs::create_directories(output_tree);
     }
   }
 
@@ -482,13 +491,13 @@ std::vector<File> debundle(_::Input_Stream& p_input_stream, const std::string& p
   /* Finally debundle files.
    * Extract files byte by byte.
    */
-  for (int i = 0; i < names_of_bundled_files.size(); i++)
+  for (int i = 0; i < paths_of_bundled_files.size(); i++)
   {
     _::Output_Stream output_stream;
 
-    auto file_name = names_of_bundled_files[i];
+    auto file_path = paths_of_bundled_files[i];
     auto file_size = sizes_of_bundled_files[i];
-    debundled_files.push_back({file_name, file_size});
+    debundled_files.push_back({file_path, file_size});
 
     if (p_to_memory)
     {
@@ -498,7 +507,7 @@ std::vector<File> debundle(_::Input_Stream& p_input_stream, const std::string& p
     }
     else
     {
-      output_stream.open(file_name, std::ios::out | std::ios::binary | std::ios::app);
+      output_stream.open(file_path, std::ios::out | std::ios::binary | std::ios::app);
     }
 
     /* Could be more efficient but whatever... works fine with small to medium sized files. */
@@ -547,7 +556,7 @@ std::vector<File> debundle(const std::string& p_bundle_path)
 std::vector<File> debundle(File& p_package)
 {
   auto buffer_size = p_package.get_bytes().size();
-  auto file_name = p_package.get_name();
+  auto file_path = p_package.get_path();
 
   if (buffer_size > 0)
   {
@@ -555,10 +564,10 @@ std::vector<File> debundle(File& p_package)
     return debundle(p_package.get_bytes().data(), buffer_size);
   }
 
-  if (!file_name.empty())
+  if (!file_path.empty())
   {
     /* Debundle files from disk to memory. */
-    return debundle(file_name);
+    return debundle(file_path);
   }
 
   return {};
@@ -568,7 +577,7 @@ std::vector<File> debundle(File& p_package)
 std::vector<File> debundle(File& p_package, const std::string& p_output_directory)
 {
   auto buffer_size = p_package.get_bytes().size();
-  auto file_name = p_package.get_name();
+  auto file_path = p_package.get_path();
 
   if (buffer_size > 0)
   {
@@ -576,10 +585,10 @@ std::vector<File> debundle(File& p_package, const std::string& p_output_director
     return debundle(p_package.get_bytes().data(), buffer_size, p_output_directory);
   }
 
-  if (!file_name.empty())
+  if (!file_path.empty())
   {
     /* Debundle files from disk to disk. */
-    return debundle(file_name, p_output_directory);
+    return debundle(file_path, p_output_directory);
   }
 
   return {};
