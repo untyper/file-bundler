@@ -1,4 +1,4 @@
-/* Github: https://github.com/untyper/file_bundler */
+/* Github: https://github.com/untyper/file-bundler */
 
 /*
   This is free and unencumbered software released into the public domain.
