@@ -1,4 +1,4 @@
-# file_bundler
+# file-bundler
 Simple header only file bundler for C++ 17 (and up)
 
 ### Bundling examples
